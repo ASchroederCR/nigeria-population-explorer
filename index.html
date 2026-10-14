@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Nigeria Population Explorer — Populace · WorldPop · GRID3 displacement</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="lib/leaflet.css">
+<link rel="stylesheet" href="style.css">
+<script>
+  // apply the saved theme before first paint (avoids a light flash in dark mode)
+  try { const t = localStorage.getItem("nga-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<script src="lib/leaflet.js"></script>
+<script src="lib/plotly.min.js"></script>
+</head>
+<body class="viz-root">
+<header>
+  <div class="title">
+    <h1>Nigeria Population Explorer</h1>
+    <span class="sub">Populace quarterly 40 m (2020 Q2–2025 Q2) · OCHA COD-AB boundaries · WorldPop R2025A · GRID3/IOM-DTM displacement</span>
+  </div>
+  <div class="header-right">
+    <nav id="tabs">
+      <button data-tab="explore" class="active">Populace explorer</button>
+      <button data-tab="compare">Populace vs WorldPop</button>
+      <button data-tab="disp">Displacement vs population</button>
+      <button data-tab="about">About the data</button>
+    </nav>
+    <label class="theme-switch">Theme
+      <select id="theme">
+        <option value="auto">Auto (system)</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select></label>
+  </div>
+</header>
+
+<!-- ============================== EXPLORER ============================== -->
+<section id="tab-explore" class="tab active">
+  <div class="filters">
+    <label>Boundaries
+      <select id="ex-level">
+        <option value="ocha_adm1">State (OCHA adm1)</option>
+        <option value="ocha_adm2" selected>LGA (OCHA adm2)</option>
+        <option value="ocha_adm3">Ward (OCHA adm3 — Borno, Adamawa, Yobe only)</option>
+      </select></label>
+    <label>Colour by
+      <select id="ex-metric">
+        <option value="pop">Population</option>
+        <option value="dens">Density (people/km²)</option>
+        <option value="chg_pct" selected>Change (%)</option>
+        <option value="chg_abs">Change (people)</option>
+        <option value="cagr">Annualised growth (%/yr)</option>
+      </select></label>
+    <label id="ex-q-wrap">Quarter <select id="ex-q"></select></label>
+    <label id="ex-from-wrap">From <select id="ex-from"></select></label>
+    <label id="ex-to-wrap">To <select id="ex-to"></select></label>
+    <label>Raster overlay <select id="ex-overlay"><option value="">None</option></select></label>
+    <label>Overlay opacity <input id="ex-opacity" type="range" min="0" max="1" step="0.05" value="0.8"></label>
+  </div>
+  <div class="grid two">
+    <div class="card map-card"><div id="ex-map" class="map"></div></div>
+    <div class="card side">
+      <h2 id="ex-sel-title">Nigeria</h2>
+      <div class="muted small" id="ex-sel-sub">Click a unit on the map to see its time series</div>
+      <div class="tiles" id="ex-tiles"></div>
+      <div id="ex-ts" class="chart"></div>
+      <div class="muted small note">Populace = quarterly (line). WorldPop R2025A constrained = annual, plotted at mid-year (dots). Both summed within the same polygon.</div>
+    </div>
+  </div>
+  <div class="grid two">
+    <div class="card"><h3>National totals</h3><div id="ex-nat" class="chart"></div>
+      <div class="muted small" id="ex-nat-note"></div></div>
+    <div class="card"><h3 id="ex-rank-title">Fastest-changing units</h3>
+      <div class="table-wrap"><table id="ex-rank" class="data"></table></div></div>
+  </div>
+</section>
+
+<!-- ============================== COMPARE ============================== -->
+<section id="tab-compare" class="tab">
+  <div class="filters">
+    <label>Boundaries
+      <select id="cp-level">
+        <option value="ocha_adm1">State (OCHA adm1)</option>
+        <option value="ocha_adm2" selected>LGA (OCHA adm2)</option>
+        <option value="ocha_adm3">Ward (OCHA adm3 — BAY only)</option>
+      </select></label>
+    <label>Year <select id="cp-year"></select></label>
+    <label>Colour by
+      <select id="cp-metric">
+        <option value="pct" selected>Populace vs WorldPop (% difference)</option>
+        <option value="abs">Populace − WorldPop (people)</option>
+        <option value="growth">Growth difference since 2020 (pp/yr)</option>
+      </select></label>
+    <label>Raster overlay <select id="cp-overlay"><option value="">None</option></select></label>
+  </div>
+  <div class="grid two">
+    <div class="card map-card"><div id="cp-map" class="map"></div></div>
+    <div class="card side">
+      <h3>Unit-level agreement</h3>
+      <div class="tiles" id="cp-tiles"></div>
+      <div id="cp-scatter" class="chart tall"></div>
+      <div class="muted small note">Each dot is one unit; log–log axes; dashed line = 1:1. Populace uses the Q2 estimate of the selected year (mid-year, matching WorldPop's reference date).</div>
+    </div>
+  </div>
+  <div class="grid two">
+    <div class="card"><h3>Annual growth: Populace vs WorldPop</h3><div id="cp-growth" class="chart"></div>
+      <div class="muted small note">Compound annual growth 2020→selected year per unit. Disagreement here shows the products imply different spatial patterns of change, not just different levels.</div></div>
+    <div class="card"><h3>Largest disagreements</h3><div class="table-wrap"><table id="cp-table" class="data"></table></div></div>
+  </div>
+</section>
+
+<!-- ============================== DISPLACEMENT ============================== -->
+<section id="tab-disp" class="tab">
+  <div class="filters">
+    <label>DTM region
+      <select id="dp-region">
+        <option value="ne">North-East (NE)</option>
+        <option value="ncnw">North-Central / North-West</option>
+      </select></label>
+    <label>Unit
+      <select id="dp-level">
+        <option value="adm3" selected>Ward (GRID3 adm3)</option>
+        <option value="adm2">LGA (GRID3 adm2)</option>
+      </select></label>
+    <label>Displacement series
+      <select id="dp-var"></select></label>
+    <label>Round A <select id="dp-a"></select></label>
+    <label>Round B <select id="dp-b"></select></label>
+    <label>Map colour
+      <select id="dp-map-metric">
+        <option value="d_disp">Δ displaced (A→B)</option>
+        <option value="d_pop">Δ Populace (A→B)</option>
+        <option value="resid">Δ Populace − Δ displaced</option>
+        <option value="share">Displaced share of population (round B)</option>
+      </select></label>
+    <label class="check"><input type="checkbox" id="dp-zero"> Treat missing as 0</label>
+    <label class="check"><input type="checkbox" id="dp-norm"> Express as % of population at A</label>
+  </div>
+  <div class="grid two">
+    <div class="card map-card"><div id="dp-map" class="map"></div></div>
+    <div class="card side">
+      <h3>Does Populace change track displacement change?</h3>
+      <div class="tiles" id="dp-tiles"></div>
+      <div id="dp-scatter" class="chart tall"></div>
+      <div class="muted small note" id="dp-scatter-note"></div>
+    </div>
+  </div>
+  <div class="grid two">
+    <div class="card">
+      <h3 id="dp-sel-title">Select a unit</h3>
+      <div class="muted small" id="dp-sel-sub">Click a ward/LGA on the map or a dot in the scatter</div>
+      <div id="dp-ts-pop" class="chart short"></div>
+      <div id="dp-ts-disp" class="chart short"></div>
+    </div>
+    <div class="card">
+      <h3>Populace change by displacement-change group</h3>
+      <div id="dp-bins" class="chart"></div>
+      <div class="muted small note">Units grouped by their Δ displaced (A→B). Bars show the median Populace change in each group; whiskers span the interquartile range. If Populace captured displacement flows, the bars would rise from left to right.</div>
+      <h3 style="margin-top:14px">Region totals over time</h3>
+      <div id="dp-region-ts" class="chart short"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== ABOUT ============================== -->
+<section id="tab-about" class="tab">
+  <div class="card prose" id="about"></div>
+</section>
+
+<div id="loading">Loading data…</div>
+<script src="data/bundle.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
